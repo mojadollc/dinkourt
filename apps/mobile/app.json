@@ -1,0 +1,17 @@
+{
+  "expo": {
+    "name": "Dinkourt",
+    "slug": "dinkourt",
+    "version": "1.0.0",
+    "scheme": "dinkourt",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "splash": { "backgroundColor": "#16a34a" },
+    "ios": { "supportsTablet": true, "bundleIdentifier": "com.dinkourt.app" },
+    "android": { "adaptiveIcon": { "backgroundColor": "#16a34a" }, "package": "com.dinkourt.app" },
+    "plugins": ["expo-router", "expo-secure-store"],
+    "extra": {
+      "apiUrl": "http://localhost:3000"
+    }
+  }
+}

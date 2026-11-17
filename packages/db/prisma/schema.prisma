@@ -1,0 +1,431 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums ───────────────────────────────────────────────────────────────────
+
+enum UserRole {
+  SUPER_ADMIN
+  OWNER
+  STAFF
+  PLAYER
+}
+
+enum OwnerStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  SUSPENDED
+}
+
+enum VenueStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED
+}
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+  COMPLETED
+  NO_SHOW
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+}
+
+enum FeeType {
+  FIXED
+  PERCENTAGE
+  FIXED_PLUS_PERCENTAGE
+  NONE
+}
+
+enum FeeChargedTo {
+  PLAYER
+  VENUE
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  PAST_DUE
+  CANCELLED
+  TRIALING
+}
+
+enum BillingInterval {
+  MONTHLY
+  ANNUAL
+}
+
+enum MembershipInterval {
+  MONTHLY
+  QUARTERLY
+  ANNUAL
+}
+
+enum TournamentStatus {
+  DRAFT
+  OPEN
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum OpenPlayStatus {
+  SCHEDULED
+  OPEN
+  FULL
+  COMPLETED
+  CANCELLED
+}
+
+enum LedgerEntryType {
+  BOOKING_PAYMENT
+  MEMBERSHIP_PAYMENT
+  TOURNAMENT_FEE
+  PLATFORM_FEE
+  SUBSCRIPTION_CHARGE
+  REFUND
+  PAYOUT
+}
+
+// ─── Users ───────────────────────────────────────────────────────────────────
+
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  passwordHash  String
+  role          UserRole
+  name          String
+  phone         String?
+  avatarUrl     String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  ownerProfile  Owner?
+  playerProfile Player?
+  staffProfile  Staff?
+}
+
+// ─── Owner ───────────────────────────────────────────────────────────────────
+
+model Owner {
+  id           String      @id @default(cuid())
+  userId       String      @unique
+  user         User        @relation(fields: [userId], references: [id])
+  businessName String
+  status       OwnerStatus @default(PENDING)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  venues        Venue[]
+  subscriptions OwnerSubscription[]
+}
+
+// ─── Player ──────────────────────────────────────────────────────────────────
+
+model Player {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id])
+  skillLevel String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  bookings              Booking[]
+  memberships           PlayerMembership[]
+  tournamentRegistrations TournamentRegistration[]
+  openPlayRegistrations   OpenPlayRegistration[]
+}
+
+// ─── Staff ───────────────────────────────────────────────────────────────────
+
+model Staff {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  user        User     @relation(fields: [userId], references: [id])
+  venueId     String
+  venue       Venue    @relation(fields: [venueId], references: [id])
+  permissions Json     @default("{}")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// ─── Venue ───────────────────────────────────────────────────────────────────
+
+model Venue {
+  id          String      @id @default(cuid())
+  ownerId     String
+  owner       Owner       @relation(fields: [ownerId], references: [id])
+  name        String
+  slug        String      @unique
+  description String?
+  address     String
+  city        String
+  province    String
+  logoUrl     String?
+  bannerUrl   String?
+  status      VenueStatus @default(PENDING)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  courts           Court[]
+  staff            Staff[]
+  memberships      MembershipPlan[]
+  tournaments      Tournament[]
+  openPlaySessions OpenPlaySession[]
+  bookingFeeConfig BookingFeeConfig?
+  ledgerEntries    LedgerEntry[]
+}
+
+// ─── Court ───────────────────────────────────────────────────────────────────
+
+model Court {
+  id          String   @id @default(cuid())
+  venueId     String
+  venue       Venue    @relation(fields: [venueId], references: [id])
+  name        String
+  description String?
+  hourlyRate  Decimal  @db.Decimal(10, 2)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  slots    CourtSlot[]
+  bookings Booking[]
+}
+
+// ─── Court Slot ───────────────────────────────────────────────────────────────
+
+model CourtSlot {
+  id          String    @id @default(cuid())
+  courtId     String
+  court       Court     @relation(fields: [courtId], references: [id])
+  startTime   DateTime
+  endTime     DateTime
+  isAvailable Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+
+  booking Booking?
+}
+
+// ─── Booking Fee Config ───────────────────────────────────────────────────────
+
+model BookingFeeConfig {
+  id             String       @id @default(cuid())
+  venueId        String       @unique
+  venue          Venue        @relation(fields: [venueId], references: [id])
+  feeType        FeeType      @default(NONE)
+  fixedAmount    Decimal?     @db.Decimal(10, 2)
+  percentage     Decimal?     @db.Decimal(5, 4)
+  chargedTo      FeeChargedTo @default(PLAYER)
+  updatedAt      DateTime     @updatedAt
+}
+
+// ─── Booking ─────────────────────────────────────────────────────────────────
+
+model Booking {
+  id              String        @id @default(cuid())
+  playerId        String
+  player          Player        @relation(fields: [playerId], references: [id])
+  courtId         String
+  court           Court         @relation(fields: [courtId], references: [id])
+  slotId          String        @unique
+  slot            CourtSlot     @relation(fields: [slotId], references: [id])
+  status          BookingStatus @default(PENDING)
+  baseAmount      Decimal       @db.Decimal(10, 2)
+  feeAmount       Decimal       @db.Decimal(10, 2) @default(0)
+  totalAmount     Decimal       @db.Decimal(10, 2)
+  feeSnapshot     Json
+  notes           String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  payment Payment?
+}
+
+// ─── Payment ─────────────────────────────────────────────────────────────────
+
+model Payment {
+  id              String        @id @default(cuid())
+  bookingId       String?       @unique
+  booking         Booking?      @relation(fields: [bookingId], references: [id])
+  membershipId    String?       @unique
+  membership      PlayerMembership? @relation(fields: [membershipId], references: [id])
+  tournamentRegId String?       @unique
+  tournamentReg   TournamentRegistration? @relation(fields: [tournamentRegId], references: [id])
+  amount          Decimal       @db.Decimal(10, 2)
+  currency        String        @default("PHP")
+  status          PaymentStatus @default(PENDING)
+  provider        String
+  providerRef     String?
+  webhookPayload  Json?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  ledgerEntry LedgerEntry?
+}
+
+// ─── Membership Plan ─────────────────────────────────────────────────────────
+
+model MembershipPlan {
+  id               String             @id @default(cuid())
+  venueId          String
+  venue            Venue              @relation(fields: [venueId], references: [id])
+  name             String
+  description      String?
+  interval         MembershipInterval
+  price            Decimal            @db.Decimal(10, 2)
+  bookingDiscount  Decimal            @db.Decimal(5, 4) @default(0)
+  benefits         Json               @default("[]")
+  usageLimit       Int?
+  capacity         Int?
+  isActive         Boolean            @default(true)
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  playerMemberships PlayerMembership[]
+}
+
+// ─── Player Membership ───────────────────────────────────────────────────────
+
+model PlayerMembership {
+  id        String   @id @default(cuid())
+  playerId  String
+  player    Player   @relation(fields: [playerId], references: [id])
+  planId    String
+  plan      MembershipPlan @relation(fields: [planId], references: [id])
+  startDate DateTime
+  endDate   DateTime
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  payment Payment?
+}
+
+// ─── Tournament ───────────────────────────────────────────────────────────────
+
+model Tournament {
+  id          String           @id @default(cuid())
+  venueId     String
+  venue       Venue            @relation(fields: [venueId], references: [id])
+  name        String
+  description String?
+  startDate   DateTime
+  endDate     DateTime
+  entryFee    Decimal          @db.Decimal(10, 2) @default(0)
+  maxPlayers  Int?
+  status      TournamentStatus @default(DRAFT)
+  categories  Json             @default("[]")
+  brackets    Json             @default("{}")
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  registrations TournamentRegistration[]
+}
+
+// ─── Tournament Registration ─────────────────────────────────────────────────
+
+model TournamentRegistration {
+  id           String        @id @default(cuid())
+  tournamentId String
+  tournament   Tournament    @relation(fields: [tournamentId], references: [id])
+  playerId     String
+  player       Player        @relation(fields: [playerId], references: [id])
+  category     String?
+  status       BookingStatus @default(PENDING)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  payment Payment?
+}
+
+// ─── Open Play Session ───────────────────────────────────────────────────────
+
+model OpenPlaySession {
+  id          String         @id @default(cuid())
+  venueId     String
+  venue       Venue          @relation(fields: [venueId], references: [id])
+  title       String
+  startTime   DateTime
+  endTime     DateTime
+  fee         Decimal        @db.Decimal(10, 2) @default(0)
+  maxPlayers  Int?
+  status      OpenPlayStatus @default(SCHEDULED)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  registrations OpenPlayRegistration[]
+}
+
+// ─── Open Play Registration ──────────────────────────────────────────────────
+
+model OpenPlayRegistration {
+  id        String          @id @default(cuid())
+  sessionId String
+  session   OpenPlaySession @relation(fields: [sessionId], references: [id])
+  playerId  String
+  player    Player          @relation(fields: [playerId], references: [id])
+  createdAt DateTime        @default(now())
+}
+
+// ─── SaaS Subscription Plans ─────────────────────────────────────────────────
+
+model Saasplan {
+  id          String          @id @default(cuid())
+  name        String
+  description String?
+  monthlyPrice Decimal        @db.Decimal(10, 2)
+  annualPrice  Decimal        @db.Decimal(10, 2)
+  features    Json            @default("[]")
+  isActive    Boolean         @default(true)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  subscriptions OwnerSubscription[]
+}
+
+// ─── Owner Subscription ──────────────────────────────────────────────────────
+
+model OwnerSubscription {
+  id          String             @id @default(cuid())
+  ownerId     String
+  owner       Owner              @relation(fields: [ownerId], references: [id])
+  planId      String
+  plan        Saasplan           @relation(fields: [planId], references: [id])
+  interval    BillingInterval
+  status      SubscriptionStatus @default(ACTIVE)
+  currentPeriodStart DateTime
+  currentPeriodEnd   DateTime
+  providerRef String?
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+}
+
+// ─── Financial Ledger ────────────────────────────────────────────────────────
+
+model LedgerEntry {
+  id          String          @id @default(cuid())
+  venueId     String?
+  venue       Venue?          @relation(fields: [venueId], references: [id])
+  paymentId   String          @unique
+  payment     Payment         @relation(fields: [paymentId], references: [id])
+  type        LedgerEntryType
+  amount      Decimal         @db.Decimal(10, 2)
+  feeAmount   Decimal         @db.Decimal(10, 2) @default(0)
+  netAmount   Decimal         @db.Decimal(10, 2)
+  description String?
+  createdAt   DateTime        @default(now())
+}
